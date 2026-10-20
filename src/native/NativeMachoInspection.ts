@@ -1,14 +1,20 @@
 import type { BinaryTarget } from "../domain/binaryTargetTypes.js";
 import type { EvidenceLocation } from "../domain/evidence.js";
 import type { AnalysisError } from "../domain/analysisErrorBase.js";
-import { AnalysisOutputError } from "../domain/analysisErrorCore.js";
+import {
+  AnalysisCancelledError,
+  AnalysisOutputError,
+} from "../domain/analysisErrorCore.js";
 import {
   inspectMachoSchema,
   type NativeCommandInvocation,
 } from "../domain/native/nativeInspection.js";
 import { jsonValueSchema, type JsonValue } from "../domain/jsonValue.js";
 import { err, ok, type Result } from "../domain/result.js";
-import type { NativeCommandCapture } from "./CommandRunner.js";
+import {
+  NativeCommandFailure,
+  type NativeCommandCapture,
+} from "./CommandRunner.js";
 import {
   MACHO_ARCHITECTURE_POLICIES,
   selectMachoArchitectureName,
@@ -131,11 +137,23 @@ export const inspectNativeMacho = async (
     throw new TypeError("Missing nm or dyld_info export capture");
   // A stripped symbol table (strip -T) can omit names the export trie keeps.
   // Only then does llvm-nm's dyld-info pass add names, and its exact names
-  // disambiguate dyld_info rows, so rerun it rather than lose them.
-  if (!namesEveryExport(captures[nmIndex]!.stdout, dyldExports)) {
+  // disambiguate dyld_info rows, so rerun it rather than lose them. The pass
+  // can crash where the symbol-table pass succeeds; the inspection then keeps
+  // the symbol-table names and reports the rows left without nm's names.
+  const symbolTable = captures[nmIndex]!.stdout;
+  if (!unnamedExportRows(symbolTable, dyldExports).next().done) {
     const withDyldInfo = await runSliceCommand(DYLD_INFO_EXPORTS);
-    if (!withDyldInfo.ok) return err(withDyldInfo.error);
-    captures[nmIndex] = withDyldInfo.value;
+    if (withDyldInfo.ok) captures[nmIndex] = withDyldInfo.value;
+    else {
+      const exit = unsuccessfulExit(withDyldInfo.error);
+      if (exit === null) return err(withDyldInfo.error);
+      limitations.push(
+        dyldInfoPassLimitation(
+          exit,
+          unnamedExportRows(symbolTable, dyldExports),
+        ),
+      );
+    }
   }
   const otool = captures.find(({ tool }) => tool === "otool");
   if (otool === undefined) throw new TypeError("Missing otool capture");
@@ -196,6 +214,14 @@ export const inspectNativeMacho = async (
           ],
         })
       : normalized;
+  // A command's own failure outranks a late abort, so a failure kept as a
+  // limitation (vtool lookup, dyld-info pass) has not consulted the signal.
+  if (context.signal?.aborted === true)
+    return err(
+      new AnalysisCancelledError("inspect_macho", {
+        cause: context.signal.reason,
+      }),
+    );
   return ok({
     result: jsonValueSchema.parse(result),
     limitations: result.limitations,
@@ -315,6 +341,27 @@ const normalizeMacho = (
   });
 };
 
+/**
+ * Describe the unsuccessful exit the runner observed, including termination
+ * by a signal. Cancellation, deadlines, output limits, launch failures, and
+ * incomplete cleanup return null so they still fail.
+ */
+const unsuccessfulExit = (error: AnalysisError): string | null => {
+  const failure = error.cause;
+  if (
+    !(failure instanceof NativeCommandFailure) ||
+    failure.reason !== "nonzero-exit" ||
+    failure.cleanupFailure !== null
+  )
+    return null;
+  const signal = failure.capture?.signal ?? null;
+  const exitCode = failure.capture?.exitCode ?? failure.exitCode;
+  if (signal !== null) return `terminated by ${signal}`;
+  return exitCode === null
+    ? "exited unsuccessfully"
+    : `exited with status ${String(exitCode)}`;
+};
+
 /** Slice output without the echoed operand path, which can contain any text. */
 const sliceOutput = (capture: NativeCommandCapture): string =>
   withoutEchoedPathHeader(capture.stdout, capture.arguments.at(-1));
@@ -328,32 +375,62 @@ const captureLookup =
   };
 
 /**
- * Whether every dyld_info export row names a symbol-table export. A row this
- * parser cannot read counts as uncovered, so an unfamiliar format falls back.
+ * Yield each dyld_info export row that no symbol-table export names: "parsed"
+ * when its export comes from dyld_info text alone, "unparsed" when this parser
+ * cannot read it. Unreadable rows count, so an unfamiliar format falls back.
  */
-const namesEveryExport = (
+function* unnamedExportRows(
   nmOutput: string,
   dyldExports: NativeCommandCapture,
-): boolean => {
+): Generator<"parsed" | "unparsed"> {
   const names = new Set(parseNmExports(nmOutput).map(({ name }) => name));
-  return sliceOutput(dyldExports)
+  for (const [index, rawLine] of sliceOutput(dyldExports)
     .split(/\r?\n/u)
-    .every((rawLine, index) => {
-      const line = rawLine.trim();
-      if (
-        line.length === 0 ||
-        (index === 0 && line.endsWith(":")) ||
-        /^-?exports:$/u.test(line) ||
-        /^offset\s+symbol$/u.test(line)
-      )
-        return true;
-      const rows = parseDyldSymbols(line, "exports", null, names);
-      // The parser withholds a row only when nm names both of its readings.
-      if (rows.length === 0)
-        return names.has(/^0x[\da-f]+\s+(.+)$/iu.exec(line)?.[1] ?? "");
-      return rows.length === 1 && names.has(rows[0]!.name);
-    });
+    .entries()) {
+    const line = rawLine.trim();
+    if (
+      line.length === 0 ||
+      (index === 0 && line.endsWith(":")) ||
+      /^-?exports:$/u.test(line) ||
+      /^offset\s+symbol$/u.test(line)
+    )
+      continue;
+    const rows = parseDyldSymbols(line, "exports", null, names);
+    // The parser withholds a row only when nm names both of its readings.
+    if (rows.length === 0) {
+      if (!names.has(/^0x[\da-f]+\s+(.+)$/iu.exec(line)?.[1] ?? ""))
+        yield "unparsed";
+    } else if (rows.length !== 1 || !names.has(rows[0]!.name)) yield "parsed";
+  }
+}
+
+/** Report the rows an unsuccessful llvm-nm dyld-info pass left without nm's names. */
+const dyldInfoPassLimitation = (
+  exit: string,
+  unnamed: Iterable<"parsed" | "unparsed">,
+): string => {
+  let parsed = 0;
+  let unparsed = 0;
+  for (const row of unnamed)
+    if (row === "parsed") parsed++;
+    else unparsed++;
+  const rows = [
+    ...(parsed === 0
+      ? []
+      : [
+          `${exportRows(parsed)} the symbol table omits ${parsed === 1 ? "is" : "are"} named from dyld_info text without nm's exact names`,
+        ]),
+    ...(unparsed === 0
+      ? []
+      : [
+          `${exportRows(unparsed, "unreadable ")} ${unparsed === 1 ? "is" : "are"} not reported`,
+        ]),
+  ];
+  return `llvm-nm's dyld-info pass ${exit}; ${rows.join("; ")}.`;
 };
+
+const exportRows = (count: number, qualifier = ""): string =>
+  `${String(count)} ${qualifier}dyld_info export row${count === 1 ? "" : "s"}`;
 
 const parseNmExports = (output: string) =>
   output

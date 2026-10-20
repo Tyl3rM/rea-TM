@@ -1,5 +1,7 @@
+import { EventEmitter } from "node:events";
 import { writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { basename, join } from "node:path";
+import { PassThrough } from "node:stream";
 import { expect, it } from "vitest";
 import {
   CPU,
@@ -9,7 +11,9 @@ import {
 import { err, ok } from "../../../../src/domain/result.js";
 import {
   NativeCommandFailure,
+  XcrunCommandRunner,
   type NativeCommandCapture,
+  type NativeCommandLauncher,
   type NativeCommandOptions,
   type NativeCommandRunner,
 } from "../../../../src/native/CommandRunner.js";
@@ -550,7 +554,10 @@ it("retains annotation parsing without nm name evidence", () => {
 /** Replay fixtures, answering nm by whether its dyld-info pass is disabled. */
 const symbolTableRunner = (
   outputs: Readonly<Record<string, string>>,
-  nm: { readonly symbolTable: string; readonly withDyldInfo: string },
+  nm: {
+    readonly symbolTable: string;
+    readonly withDyldInfo: string | NativeCommandFailure;
+  },
 ) => {
   const nmArguments: (readonly string[])[] = [];
   const replay = (output: string) =>
@@ -559,13 +566,37 @@ const symbolTableRunner = (
     run: (tool, arguments_) => {
       if (tool !== "nm") return replay("").run(tool, arguments_);
       nmArguments.push(arguments_);
-      return replay(
-        arguments_.includes("--no-dyldinfo") ? nm.symbolTable : nm.withDyldInfo,
-      ).run(tool, arguments_);
+      if (arguments_.includes("--no-dyldinfo"))
+        return replay(nm.symbolTable).run(tool, arguments_);
+      return nm.withDyldInfo instanceof NativeCommandFailure
+        ? Promise.resolve(err(nm.withDyldInfo))
+        : replay(nm.withDyldInfo).run(tool, arguments_);
     },
   };
   return { runner, nmArguments };
 };
+
+/** An nm process that ended with the given status and printed nothing. */
+const nmExitFailure = (
+  status: { readonly exitCode: number | null; readonly signal: string | null },
+  cleanupFailure: string | null = null,
+) =>
+  new NativeCommandFailure(
+    "nm",
+    "nonzero-exit",
+    status.exitCode,
+    undefined,
+    {
+      stdout: "",
+      stderr: "",
+      stdoutBytes: 0,
+      stderrBytes: 0,
+      truncated: false,
+      ...status,
+    },
+    cleanupFailure,
+    cleanupFailure === null ? [] : ["pid:4242"],
+  );
 
 /** nm arguments in provenance, which records the artifact operand as a placeholder. */
 const nmCommands = (result: unknown) =>
@@ -634,3 +665,228 @@ it("reruns nm with its dyld-info pass when a dyld_info export row is unreadable"
     ["-gjU", "-arch"],
   ]);
 });
+
+it.each([
+  [
+    { exitCode: null, signal: "SIGSEGV" },
+    "llvm-nm's dyld-info pass terminated by SIGSEGV; 6 dyld_info export rows the symbol table omits are named from dyld_info text without nm's exact names.",
+  ],
+  [
+    { exitCode: 1, signal: null },
+    "llvm-nm's dyld-info pass exited with status 1; 6 dyld_info export rows the symbol table omits are named from dyld_info text without nm's exact names.",
+  ],
+])(
+  "keeps symbol-table exports when llvm-nm's dyld-info pass exits unsuccessfully: %o",
+  async (status, limitation) => {
+    const trieNames = await fixture("dyld-inventory/stripped-swift-nm.txt");
+    const { runner, nmArguments } = symbolTableRunner(
+      {
+        "dyld_info:-exports": await fixture(
+          "dyld-inventory/stripped-swift-exports.txt",
+        ),
+      },
+      { symbolTable: "", withDyldInfo: nmExitFailure(status) },
+    );
+    const execution = await new NativeMacOSProvider({}, runner, "darwin")
+      .createClient(machoTarget("/private/fixture"))
+      .execute("inspect_macho", {});
+    if (!execution.ok) throw execution.error;
+    const symbolTable = [
+      "-gjU",
+      "--no-dyldinfo",
+      "-arch",
+      "arm64",
+      "/private/fixture",
+    ];
+    expect(nmArguments).toEqual([
+      symbolTable,
+      ["-gjU", "-arch", "arm64", "/private/fixture"],
+    ]);
+    // Provenance names the nm run whose output the exports came from.
+    expect(nmCommands(execution.value.result)).toEqual([symbolTable]);
+    const result = execution.value.result as {
+      exports: { items: { name: string }[] };
+      limitations: string[];
+    };
+    expect(result.exports.items.map(({ name }) => name)).toEqual(
+      trieNames.trim().split("\n").sort(),
+    );
+    expect(result.limitations).toContain(limitation);
+    expect(execution.value.limitations).toContain(limitation);
+  },
+);
+
+it("counts unreadable dyld_info export rows when llvm-nm's dyld-info pass fails", async () => {
+  const names = await fixture("dyld-inventory/nm.txt");
+  const exportsOutput = await fixture("dyld-inventory/exports.txt");
+  const { runner } = symbolTableRunner(
+    {
+      "dyld_info:-exports": `${exportsOutput.trimEnd()}\n        <unrecognized export row>\n`,
+    },
+    {
+      symbolTable: names,
+      withDyldInfo: nmExitFailure({ exitCode: null, signal: "SIGSEGV" }),
+    },
+  );
+  const execution = await new NativeMacOSProvider({}, runner, "darwin")
+    .createClient(machoTarget("/private/fixture"))
+    .execute("inspect_macho", {});
+  if (!execution.ok) throw execution.error;
+  expect(execution.value.limitations).toContain(
+    "llvm-nm's dyld-info pass terminated by SIGSEGV; 1 unreadable dyld_info export row is not reported.",
+  );
+});
+
+it.skipIf(process.platform === "win32")(
+  "returns the caller's cancellation when it arrives while a failed dyld-info pass is cleaned up",
+  async () => {
+    const outputs: Readonly<Record<string, string>> = {
+      lipo: await fixture("lipo-fat.txt"),
+      otool: await fixture("otool-load.txt"),
+      "dyld_info:-imports": await fixture("dyld-imports.txt"),
+      "dyld_info:-exports": await fixture(
+        "dyld-inventory/stripped-swift-exports.txt",
+      ),
+      dwarfdump:
+        "UUID: 01234567-89AB-CDEF-0123-456789ABCDEF (arm64) /private/fixture\n",
+      vtool: "Load command 3 LC_BUILD_VERSION\n",
+    };
+    for (const status of [
+      { exitCode: null, signal: "SIGSEGV" as const },
+      { exitCode: 1, signal: null },
+    ]) {
+      const controller = new AbortController();
+      const reason = new Error("caller cancelled during nm cleanup");
+      let launches = 0;
+      // Owned processes print their fixture; only the dyld-info pass fails.
+      const launcher: NativeCommandLauncher = async (options) => {
+        const tool = basename(options.command);
+        const rerun =
+          tool === "nm" && !options.arguments.includes("--no-dyldinfo");
+        const exit = rerun ? status : { exitCode: 0, signal: null };
+        const child = Object.assign(new EventEmitter(), {
+          stdout: new PassThrough(),
+          stderr: new PassThrough(),
+          exitCode: null as number | null,
+          signalCode: null as NodeJS.Signals | null,
+          kill: () => true,
+        });
+        setImmediate(() => {
+          child.stdout.end(
+            outputs[`${tool}:${options.arguments[0] ?? ""}`] ??
+              outputs[tool] ??
+              "",
+          );
+          child.stderr.end("");
+          child.exitCode = exit.exitCode;
+          child.signalCode = exit.signal;
+          child.emit("exit", exit.exitCode, exit.signal);
+          setImmediate(() => child.emit("close", exit.exitCode, exit.signal));
+        });
+        launches += 1;
+        return {
+          process: child,
+          ownership: {
+            runId: options.runId,
+            leaderPid: 44_000 + launches,
+            processGroupId: 44_000 + launches,
+            expectedParentPid: process.pid,
+          },
+          // The caller cancels while the failed pass's final cleanup is awaited.
+          cleanup: async () => {
+            if (rerun) controller.abort(reason);
+            return { cleaned: true, signaled: false };
+          },
+        };
+      };
+      const runner = new XcrunCommandRunner(
+        {},
+        async (tool) =>
+          ok({ path: `/usr/bin/${tool}`, sha256: "a".repeat(64) }),
+        launcher,
+      );
+
+      const execution = await new NativeMacOSProvider({}, runner, "darwin")
+        .createClient(machoTarget("/private/fixture"))
+        .execute("inspect_macho", {}, { signal: controller.signal });
+
+      expect(execution.ok ? undefined : execution.error).toMatchObject({
+        _tag: "AnalysisCancelledError",
+      });
+      expect(execution.ok ? undefined : execution.error.cause).toBe(reason);
+    }
+  },
+);
+
+it("returns the caller's cancellation when it arrives as vtool is found unavailable", async () => {
+  const controller = new AbortController();
+  const reason = new Error("caller cancelled during vtool lookup");
+  const replay = new FixtureRunner({
+    nm: await fixture("dyld-inventory/nm.txt"),
+    "dyld_info:-exports": await fixture("dyld-inventory/exports.txt"),
+  });
+  const runner: NativeCommandRunner = {
+    run: (tool, arguments_) => {
+      if (tool !== "vtool") return replay.run(tool, arguments_);
+      controller.abort(reason);
+      return Promise.resolve(
+        err(new NativeCommandFailure("vtool", "unavailable")),
+      );
+    },
+  };
+
+  const execution = await new NativeMacOSProvider({}, runner, "darwin")
+    .createClient(machoTarget("/private/fixture"))
+    .execute("inspect_macho", {}, { signal: controller.signal });
+
+  expect(execution.ok ? undefined : execution.error).toMatchObject({
+    _tag: "AnalysisCancelledError",
+  });
+  expect(execution.ok ? undefined : execution.error.cause).toBe(reason);
+});
+
+it.each([
+  [
+    "cancellation",
+    new NativeCommandFailure("nm", "cancelled"),
+    { _tag: "AnalysisCancelledError" },
+  ],
+  [
+    "a deadline",
+    new NativeCommandFailure("nm", "timeout"),
+    { _tag: "AnalysisTimeoutError" },
+  ],
+  [
+    "an I/O failure",
+    new NativeCommandFailure("nm", "io"),
+    { _tag: "ProviderAdapterError" },
+  ],
+  [
+    "an exit whose process cleanup is incomplete",
+    nmExitFailure(
+      { exitCode: null, signal: "SIGSEGV" },
+      "process group remains alive",
+    ),
+    {
+      _tag: "ProviderAdapterError",
+      cleanupIncomplete: true,
+      cleanupResources: ["pid:4242"],
+    },
+  ],
+])(
+  "still fails when llvm-nm's dyld-info pass ends with %s",
+  async (_case, failure, error) => {
+    const { runner } = symbolTableRunner(
+      {
+        "dyld_info:-exports": await fixture(
+          "dyld-inventory/stripped-swift-exports.txt",
+        ),
+      },
+      { symbolTable: "", withDyldInfo: failure },
+    );
+    const execution = await new NativeMacOSProvider({}, runner, "darwin")
+      .createClient(machoTarget("/private/fixture"))
+      .execute("inspect_macho", {});
+    expect(execution).toMatchObject({ ok: false, error });
+  },
+);

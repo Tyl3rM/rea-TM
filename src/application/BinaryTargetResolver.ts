@@ -7,9 +7,10 @@ import {
   stat,
   type FileHandle,
 } from "node:fs/promises";
-import { extname } from "node:path";
+import { basename } from "node:path";
 
 import { BinaryTargetError } from "../domain/configurationErrors.js";
+import { isAppleProgramBundleName } from "../domain/apple/appleBundleAnatomy.js";
 import {
   openRegularFile,
   sameRegularFileState,
@@ -438,11 +439,11 @@ const resolveAppBundle = async (
 ): Promise<Result<ResolvedAppBundle, BinaryTargetError>> => {
   const metadata = await stat(path);
   if (!metadata.isDirectory()) return ok({ executable: path });
-  if (extname(path).toLowerCase() !== ".app")
+  if (!isAppleProgramBundleName(basename(path)))
     return err(
       new BinaryTargetError(
         path,
-        "this opening route requires a file or app bundle",
+        "this opening route requires a file, app bundle, or app extension bundle",
         {
           constraint: "directory_requires_file",
         },

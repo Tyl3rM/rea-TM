@@ -90,7 +90,7 @@ export const ARTIFACT_TOOL_CONTRACTS = [
   ),
   artifact(
     "decode_interface_builder",
-    "Decode compiled storyboard and nib archives inside the active Apple app bundle, including keyed property lists and NIBArchive object tables, into a bounded object, hierarchy, and connection graph. This is static archive parsing; unrecognized archive classes and unresolved code handlers remain explicit unknowns. A full app graph is often several megabytes; detail summary retains it and returns documents with node, edge and coverage counts, then page rows, optionally one document's, with inspect_analysis_view kind interface-builder.",
+    "Decode compiled storyboard and nib archives inside the active Apple app or app extension bundle, including keyed property lists and NIBArchive object tables, into a bounded object, hierarchy, and connection graph. This is static archive parsing; unrecognized archive classes and unresolved code handlers remain explicit unknowns. A full app graph is often several megabytes; detail summary retains it and returns documents with node, edge and coverage counts, then page rows, optionally one document's, with inspect_analysis_view kind interface-builder.",
     z.strictObject({
       max_documents: z.number().int().min(1).max(64).default(64),
       max_objects: z.number().int().min(1).max(20_000).default(20_000),
@@ -105,17 +105,17 @@ export const ARTIFACT_TOOL_CONTRACTS = [
   ),
   artifact(
     "inspect_keyed_archive",
-    "Inspect one Foundation NSKeyedArchiver plist in the active app bundle as original object-table nodes, class descriptors, named roots, and UID edges. Preserves shared and cyclic references without instantiating classes. The path is relative to the bundle; root selection and object pagination preserve original identities.",
+    "Inspect one Foundation NSKeyedArchiver plist in the active app or app extension bundle as original object-table nodes, class descriptors, named roots, and UID edges. Preserves shared and cyclic references without instantiating classes. The path is relative to the bundle; root selection and object pagination preserve original identities.",
     keyedArchiveInputSchema,
   ),
   artifact(
     "inspect_asset_catalog",
-    "Inspect compiled Assets.car metadata in an active Apple app bundle. Returns stable paginated catalog and rendition records with raw assetutil metadata and catalog digests; rendition bytes are not extracted.",
+    "Inspect compiled Assets.car metadata in an active Apple app or app extension bundle. Returns stable paginated catalog and rendition records with raw assetutil metadata and catalog digests; rendition bytes are not extracted.",
     appleAssetCatalogInputSchema,
   ),
   artifact(
     "trace_dylib_resolution",
-    "Trace how dyld would resolve each Mach-O dylib load for the active Mach-O, or for every executable in the active .app bundle (the main app, XPC services, extensions, login items, helpers). Expands @executable_path, @loader_path, and @rpath through each process's LC_RPATH stack in dependents-first load order, and reports every candidate path with its outcome, the resolved image and digest, weak, re-export, and upward flags, and derived findings such as unresolved required loads or absent earlier @rpath candidates. Pure header parsing: nothing is executed, and absolute or system paths outside the analyzed root stay undetermined. Select roots or one architecture to narrow large bundles.",
+    "Trace how dyld would resolve each Mach-O dylib load for the active Mach-O, or for every executable in the active .app or .appex bundle (the main app, XPC services, extensions, login items, helpers). Expands @executable_path, @loader_path, and @rpath through each process's LC_RPATH stack in dependents-first load order, and reports every candidate path with its outcome, the resolved image and digest, weak, re-export, and upward flags, and derived findings such as unresolved required loads or absent earlier @rpath candidates. Pure header parsing: nothing is executed, and absolute or system paths outside the analyzed root stay undetermined. Select roots or one architecture to narrow large bundles.",
     dylibResolutionInputSchema,
   ),
 ] as const satisfies readonly ToolContract[];

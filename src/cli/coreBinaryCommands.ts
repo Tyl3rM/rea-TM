@@ -15,6 +15,7 @@ import { runCliJavaScriptApplicationAnalysis } from "./javascriptApplicationAnal
 import { withCommandCancellation } from "./commandCancellation.js";
 import { javascriptApplicationOptions } from "../cliObservationOptions.js";
 import { AnalysisInputError } from "../domain/analysisErrorCore.js";
+import { isAppleProgramBundleName } from "../domain/apple/appleBundleAnatomy.js";
 import { absoluteCallerPath } from "../filesystem/callerPath.js";
 
 /** Register provider-neutral binary overview and procedure CLI commands. */
@@ -236,7 +237,7 @@ const isJavaScriptApplicationPath = async (path: string): Promise<boolean> => {
   const lower = path.toLowerCase();
   if (lower.endsWith(".asar")) return true;
   // `A.app/` and `A.app/.` name the same bundle as `A.app`.
-  if (lower.replace(/(?:\/\.?)+$/u, "").endsWith(".app")) return false;
+  if (isAppleProgramBundleName(lower.replace(/(?:\/\.?)+$/u, ""))) return false;
   try {
     return (await stat(path)).isDirectory();
   } catch (cause: unknown) {

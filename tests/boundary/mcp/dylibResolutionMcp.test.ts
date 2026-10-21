@@ -181,15 +181,27 @@ it("reports target kinds that artifact operations cannot inspect as unsupported"
   await writeFile(tool, machoImage({ commands: [buildVersionCommand(1)] }));
   await withClient(async (client) => {
     for (const [path, operation, requirement] of [
-      [plist, "decode_interface_builder", "requires an active .app bundle"],
+      [
+        plist,
+        "decode_interface_builder",
+        "requires an active app or app extension bundle",
+      ],
       // Elsewhere the session reports asset catalogs as unavailable on the
       // host before the provider checks the target kind.
       ...(process.platform === "darwin"
         ? ([
-            [plist, "inspect_asset_catalog", "requires an active .app bundle"],
+            [
+              plist,
+              "inspect_asset_catalog",
+              "requires an active app or app extension bundle",
+            ],
           ] as const)
         : []),
-      [tool, "inspect_keyed_archive", "requires an active plist or .app"],
+      [
+        tool,
+        "inspect_keyed_archive",
+        "requires an active plist, app, or app extension bundle",
+      ],
     ] as const) {
       const open = { name: "open_binary", arguments: { path } };
       expect((await client.callTool(open)).isError, path).not.toBe(true);

@@ -277,7 +277,7 @@ export const analysisErrorUserMessage = (error: AnalysisError): string => {
     return `${error.message}. Static WebAssembly inspection uses a separate optional WABT lane, not a native analysis engine.`;
   if (error instanceof BinaryTargetError)
     return error.constraint === "directory_requires_file"
-      ? "open_binary accepts files and macOS app bundles. This target is a directory; JavaScript/Electron application directories can be analyzed directly with analyze_javascript_application or `rea analyze <directory>`."
+      ? "open_binary accepts files, app bundles (.app), and app extension bundles (.appex). This target is a directory; JavaScript/Electron application directories can be analyzed directly with analyze_javascript_application or `rea analyze <directory>`."
       : error.constraint === "file_format_rejected" ||
           error.constraint === "load_selection_rejected"
         ? `${error.message}.`

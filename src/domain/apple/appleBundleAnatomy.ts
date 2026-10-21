@@ -7,6 +7,14 @@ const pathSchema = z.string().min(1);
 
 const BUNDLE_EXTENSION =
   /\.(?:app|appex|xpc|framework|systemextension|dext|bundle|plugin|qlgenerator|mdimporter)$/iu;
+const PROGRAM_BUNDLE_EXTENSION = /\.(?:app|appex)$/iu;
+
+/**
+ * Whether a directory name is an application or app extension bundle, whose
+ * Info.plist declares the program file a target opened from it resolves to.
+ */
+export const isAppleProgramBundleName = (name: string): boolean =>
+  PROGRAM_BUNDLE_EXTENSION.test(name);
 const MACH_O_FORMATS: readonly string[] = ["mach-o", "mach-o-universal"];
 
 /** One inventoried file or directory with its content identity. */

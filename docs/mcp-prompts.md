@@ -30,7 +30,8 @@ directly to `analyze_javascript_application` with `input_path`; it does not
 require `open_binary`. When that Evidence, or `inspect_binary_layout` Evidence,
 is already retained, it suggests `inspect_analysis_view` before tracing a
 feature seed. The CLI equivalent is `rea analyze <directory>`.
-`open_binary` and the doctor target check admit files and macOS app bundles.
+`open_binary` and the doctor target check admit files, app bundles (`.app`),
+and app extension bundles (`.appex`).
 A directory outside that opening route is reported with an available analysis
 action; this does not establish support for every directory format.
 

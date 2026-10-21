@@ -22,6 +22,9 @@ import { registerRecordedCrashTools } from "./registerRecordedCrashTools.js";
 import { createRecordedCrashService } from "../composition/binaryDiagnostics.js";
 import { createGoBinaryService } from "../composition/go.js";
 import type { GoBinaryService } from "../application/go/GoBinaryService.js";
+import { createCoreMlService } from "../composition/coreml.js";
+import type { CoreMlService } from "../application/coreml/CoreMlService.js";
+import { registerCoreMlTools } from "./registerCoreMlTools.js";
 import { createElectronFuseService } from "../composition/electronFuses.js";
 import type { ElectronFuseService } from "../application/electron/ElectronFuseService.js";
 import { registerGoTools } from "./registerGoTools.js";
@@ -158,6 +161,7 @@ export interface CreateServerOptions {
   readonly logger?: Logger;
   readonly binaryLayout?: BinaryLayoutService;
   readonly goBinary?: GoBinaryService;
+  readonly coreMl?: CoreMlService;
   readonly rustBinary?: RustBinaryService;
   readonly electronFuses?: ElectronFuseService;
   readonly recordedCrash?: RecordedCrashService;
@@ -310,6 +314,7 @@ export const createServer = (
   const webModuleTrace =
     options.webModuleTrace ?? createWebModuleTraceService(environment);
   const goBinary = options.goBinary ?? createGoBinaryService();
+  const coreMl = options.coreMl ?? createCoreMlService();
   const peResources = createPeResourcesService();
   const webNetworkCapture =
     options.webNetworkCapture ?? createWebNetworkCaptureService(environment);
@@ -387,6 +392,7 @@ export const createServer = (
       webSourceLocation.close(),
       webModuleTrace.close(),
       goBinary.close(),
+      coreMl.close(),
       peResources.close(),
       webNetworkCapture.close(),
       javascriptRecovery.close?.() ?? Promise.resolve(),
@@ -444,6 +450,7 @@ export const createServer = (
     withAdmittedAnalysis: analysisAdmission,
     artifactResources,
     goBinary,
+    coreMl,
     peResources,
     webNetworkCapture,
   };
@@ -642,6 +649,7 @@ const registerConfiguredAnalysisTools = (
     recordEvidence,
     withAdmittedAnalysis,
     goBinary,
+    coreMl,
     peResources,
     webNetworkCapture,
   }: ServerToolContext,
@@ -692,6 +700,13 @@ const registerConfiguredAnalysisTools = (
   registerGoTools(
     server,
     goBinary,
+    toolLogger,
+    recordEvidence,
+    withAdmittedAnalysis,
+  );
+  registerCoreMlTools(
+    server,
+    coreMl,
     toolLogger,
     recordEvidence,
     withAdmittedAnalysis,
@@ -809,6 +824,7 @@ const createSessionRecorders = (
 
 interface ServerToolContext extends ReturnType<typeof createSessionRecorders> {
   readonly goBinary: GoBinaryService;
+  readonly coreMl: CoreMlService;
   readonly peResources: PeResourcesService;
   readonly webNetworkCapture: WebNetworkCaptureService;
   readonly artifactResources: ArtifactResourceScope;

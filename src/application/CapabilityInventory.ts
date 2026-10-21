@@ -351,6 +351,7 @@ const workflowAvailabilityFor = ({
     name === "inspect_go_binary" ||
     name === "inspect_rust_binary" ||
     name === "inspect_coreml_model" ||
+    name === "inspect_puredata" ||
     name === "inspect_electron_fuses"
   )
     return { reason: "available", remediation: null };

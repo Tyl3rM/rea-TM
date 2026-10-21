@@ -7,6 +7,7 @@ import { registerEvmCommands } from "./cli/evmCommands.js";
 import { registerGoCommands } from "./cli/goCommands.js";
 import { registerRustCommands } from "./cli/rustCommands.js";
 import { registerCoreMlCommands } from "./cli/coreMlCommands.js";
+import { registerPureDataCommands } from "./cli/pureDataCommands.js";
 import { registerSqliteCommands } from "./cli/sqliteCommands.js";
 import { registerAnalysisViewCommands } from "./cli/analysisViewCommands.js";
 import { registerBinaryDiagnosticsCommands } from "./cli/binaryDiagnosticsCommands.js";
@@ -109,6 +110,7 @@ export const createCli = (
   registerGoCommands(cli, logger);
   registerRustCommands(cli, logger);
   registerCoreMlCommands(cli, logger);
+  registerPureDataCommands(cli, logger);
   registerSqliteCommands(cli, logger, environment);
   registerArtifactCommands(cli, logger, analysis.runProviderAnalysis);
   registerManagedCommands(cli, logger, analysis.runProviderAnalysis);

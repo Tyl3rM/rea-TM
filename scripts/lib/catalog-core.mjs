@@ -73,6 +73,8 @@ const SOURCE_PATHS = {
   rustProvider: "dist/rust/RustBinaryProvider.js",
   coreMlContracts: "dist/contracts/coreml/coreMlToolContracts.js",
   coreMlProvider: "dist/coreml/CoreMlProvider.js",
+  pureDataContracts: "dist/contracts/puredata/pureDataToolContracts.js",
+  pureDataProvider: "dist/puredata/PureDataProvider.js",
   artifactContracts: "dist/contracts/artifactToolContracts.js",
   managedContracts: "dist/contracts/managed/managedToolContracts.js",
   firmwareContracts: "dist/contracts/firmware/firmwareToolContracts.js",

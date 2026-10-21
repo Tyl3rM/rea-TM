@@ -5,6 +5,7 @@ import { EVM_TOOL_CONTRACTS } from "./evm/evmToolContracts.js";
 import { GO_TOOL_CONTRACTS } from "./go/goToolContracts.js";
 import { RUST_TOOL_CONTRACTS } from "./rust/rustToolContracts.js";
 import { CORE_ML_TOOL_CONTRACTS } from "./coreml/coreMlToolContracts.js";
+import { PURE_DATA_TOOL_CONTRACTS } from "./puredata/pureDataToolContracts.js";
 import { SQLITE_TOOL_CONTRACTS } from "./sqlite/sqliteToolContracts.js";
 import { ANALYSIS_VIEW_TOOL_CONTRACTS } from "./analysisViewToolContracts.js";
 import { BINARY_DIAGNOSTICS_TOOL_CONTRACTS } from "./native/binaryDiagnosticsToolContracts.js";
@@ -48,6 +49,7 @@ export const TOOL_CONTRACTS = [
   ...GO_TOOL_CONTRACTS,
   ...RUST_TOOL_CONTRACTS,
   ...CORE_ML_TOOL_CONTRACTS,
+  ...PURE_DATA_TOOL_CONTRACTS,
   ...WASM_TOOL_CONTRACTS,
   ...SQLITE_TOOL_CONTRACTS,
   ...CAPTURE_TOOL_CONTRACTS,

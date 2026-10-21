@@ -35,6 +35,7 @@ export const toolFamilyCatalog = (sources) => {
         ...sources.goContracts.GO_TOOL_CONTRACTS,
         ...sources.rustContracts.RUST_TOOL_CONTRACTS,
         ...sources.coreMlContracts.CORE_ML_TOOL_CONTRACTS,
+        ...sources.pureDataContracts.PURE_DATA_TOOL_CONTRACTS,
         ...sources.wasmContracts.WASM_TOOL_CONTRACTS,
         ...sources.sqliteContracts.SQLITE_TOOL_CONTRACTS,
         ...sources.captureContracts.CAPTURE_TOOL_CONTRACTS,
@@ -273,6 +274,10 @@ export const providerCatalog = (sources) => {
     {
       identity: sources.coreMlProvider.CORE_ML_PROVIDER_IDENTITY,
       contracts: sources.coreMlContracts.CORE_ML_TOOL_CONTRACTS,
+    },
+    {
+      identity: sources.pureDataProvider.PURE_DATA_PROVIDER_IDENTITY,
+      contracts: sources.pureDataContracts.PURE_DATA_TOOL_CONTRACTS,
     },
     {
       identity: sources.electronFuseProvider.ELECTRON_FUSE_PROVIDER_IDENTITY,

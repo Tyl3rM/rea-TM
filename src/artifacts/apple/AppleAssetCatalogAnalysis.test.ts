@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { mkdir, symlink, writeFile } from "node:fs/promises";
+import { mkdir, open, realpath, symlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
 import { describe, expect, it, vi } from "vitest";
@@ -136,6 +136,43 @@ describe("Apple asset catalog application workflow", () => {
     );
   });
 });
+
+it("digests a catalog larger than the metadata bound and bounds only assetutil output", async () => {
+  // A 467 MB shipped catalog produced 779 KB of assetutil metadata; catalog
+  // bytes are streamed into the digest, so only the metadata is retained.
+  const bundle = await createTestTempDirectory("rea-asset-catalog-large-");
+  const catalog = join(bundle, "Assets.car");
+  const size = 64 * 1024 * 1024 + 1;
+  const handle = await open(catalog, "w");
+  await handle.truncate(size);
+  await handle.close();
+  const expected = createHash("sha256");
+  const block = Buffer.alloc(1024 * 1024);
+  for (let remaining = size; remaining > 0; remaining -= block.length)
+    expected.update(block.subarray(0, Math.min(block.length, remaining)));
+  const inspected: string[] = [];
+  const result = await analyzeAppleAssetCatalogs({
+    environment: {},
+    bundlePath: bundle,
+    targetSha256: "a".repeat(64),
+    runAssetUtil: (path) => {
+      inspected.push(path);
+      return Promise.resolve(JSON.stringify([{ Name: "Toolbar" }]));
+    },
+  });
+  expect(inspected).toEqual([await realpath(catalog)]);
+  expect(result.catalogs).toEqual([
+    { path: "Assets.car", sha256: expected.digest("hex"), record_count: 1 },
+  ]);
+  const oversized = await analyzeAppleAssetCatalogs({
+    environment: {},
+    bundlePath: bundle,
+    targetSha256: "a".repeat(64),
+    runAssetUtil: () => Promise.resolve(`[${" ".repeat(64 * 1024 * 1024)}]`),
+  }).catch((cause: unknown) => cause);
+  expect(oversized).toBeInstanceOf(ArtifactReaderFailure);
+  expect(oversized).toMatchObject({ reason: "limit" });
+}, 20_000);
 
 it.each([1, 2])(
   "joins NIBArchive keys against %i supplied assetutil renditions",

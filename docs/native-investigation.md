@@ -309,6 +309,11 @@ complete observation.
 - `inspect_asset_catalog` / `rea inspect-asset-catalog <app>` reads compiled
   `Assets.car` metadata through macOS `assetutil --info`. Catalog digests, raw
   rendition fields, pagination and exact UI resource-name matches are returned.
+  Here and for `decode_interface_builder`, `inspect_keyed_archive`,
+  `inspect_plist` and `trace_dylib_resolution`, `<app>` is an `.app` or
+  `.appex` bundle directory; a regular file named `*.app` is a standalone image.
+  Catalog files are streamed into their digests, so their size is not limited;
+  `assetutil` metadata output is bounded at 64 MiB per catalog and combined.
   Image extraction and undocumented rendition interpretation are unsupported.
 - `inspect_keyed_archive` / `rea inspect-keyed-archive <plist>` reads XML or
   binary Foundation keyed archives without instantiating classes. For an active

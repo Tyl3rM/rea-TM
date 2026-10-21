@@ -15,7 +15,9 @@ import {
 import { execFileOutput } from "../../process/ExecFileOutput.js";
 
 const ASSETUTIL = "/usr/bin/assetutil";
-const MAX_CATALOG_BYTES = 64 * 1024 * 1024;
+// Catalog bytes are streamed into digests and read by assetutil itself; only
+// its metadata output is buffered and retained, so only that is bounded.
+const MAX_METADATA_BYTES = 64 * 1024 * 1024;
 const MAX_TOTAL_METADATA_BYTES = 64 * 1024 * 1024;
 
 /** Inspect compiled asset catalog metadata without extracting rendition bytes. */
@@ -168,7 +170,7 @@ const inspectAssetCatalogEntry = async (input: {
   readonly signal?: AbortSignal;
 }) => {
   const { entry, reader, signal } = input;
-  const sha256 = await digestBounded(reader, entry, signal);
+  const sha256 = await digest(reader, entry, signal);
   const before = await lstat(entry.adapterKey, { bigint: true });
   if (
     !before.isFile() ||
@@ -183,7 +185,7 @@ const inspectAssetCatalogEntry = async (input: {
   if (
     !after.isFile() ||
     !sameArtifactSourceIdentity(entry.sourceIdentity, after) ||
-    (await digestBounded(reader, entry, signal)) !== sha256
+    (await digest(reader, entry, signal)) !== sha256
   )
     throw new ArtifactReaderFailure(
       "integrity",
@@ -259,7 +261,7 @@ const runAssetUtil = async (
       await execFileOutput(ASSETUTIL, ["--info", path], {
         env: environment,
         timeout: 60_000,
-        maxBuffer: MAX_CATALOG_BYTES,
+        maxBuffer: MAX_METADATA_BYTES,
         ...(signal === undefined ? {} : { signal }),
       })
     ).stdout;
@@ -285,33 +287,20 @@ const runAssetUtil = async (
   }
 };
 
-const digestBounded = async (
+const digest = async (
   reader: DirectoryArtifactReader,
   entry: import("../ArtifactReader.js").ArtifactEntry,
   signal?: AbortSignal,
 ): Promise<string> => {
-  if (entry.declaredSize === null || entry.declaredSize > MAX_CATALOG_BYTES)
-    throw new ArtifactReaderFailure(
-      "limit",
-      `Asset catalog exceeds ${MAX_CATALOG_BYTES} bytes: ${entry.path}`,
-    );
   const stream = await reader.open(entry, signal);
   const hash = createHash("sha256");
-  let length = 0;
   for await (const chunk of stream) {
     if (signal?.aborted === true)
       throw new ArtifactReaderFailure(
         "cancelled",
         "Asset catalog inspection cancelled",
       );
-    const bytes = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
-    length += bytes.length;
-    if (length > MAX_CATALOG_BYTES)
-      throw new ArtifactReaderFailure(
-        "limit",
-        `Asset catalog exceeds byte limit: ${entry.path}`,
-      );
-    hash.update(bytes);
+    hash.update(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
   }
   return hash.digest("hex");
 };

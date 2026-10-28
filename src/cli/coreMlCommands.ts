@@ -1,3 +1,4 @@
+import { projectCliAnalysisResult } from "./projectCliAnalysisResult.js";
 import { z } from "incur";
 import { createCoreMlService } from "../composition/coreml.js";
 import { CLI_COMMANDS } from "../cliCommandNames.js";
@@ -26,15 +27,18 @@ export const registerCoreMlCommands = (
           logger,
           CLI_COMMANDS.inspectCoreMlModel,
           async () =>
-            finishAnalysisCommand(
-              () =>
-                service.inspect(
-                  { path: absoluteCallerPath(args.path) },
-                  { signal },
-                ),
-              service,
-              "coreml-metadata",
-              "inspect_coreml_model",
+            projectCliAnalysisResult(
+              await finishAnalysisCommand(
+                () =>
+                  service.inspect(
+                    { path: absoluteCallerPath(args.path) },
+                    { signal },
+                  ),
+                service,
+                "coreml-metadata",
+                "inspect_coreml_model",
+                signal,
+              ),
             ),
         );
       }),

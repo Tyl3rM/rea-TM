@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
@@ -79,9 +80,22 @@ describe("app extension bundles", () => {
       expect(opened.isError).not.toBe(true);
       const mcp = await call("decode_interface_builder", {});
       expect(mcp.isError).not.toBe(true);
-      expect(parseEvidence(mcp.structuredContent).normalized_result).toEqual(
-        graph,
-      );
+      // The standalone CLI inspects resources without opening an executable;
+      // the MCP operation is bound to the opened executable's identity.
+      expect(graph.target_sha256).toBeNull();
+      expect(graph.resource_root).toMatchObject({
+        caller_path: appex,
+        executable_sha256: null,
+      });
+      const targetSha256 = createHash("sha256")
+        .update(thinMach(0xfeedfacf, 0x0100000c))
+        .digest("hex");
+      const { resource_root: _resourceRoot, ...shared } = graph;
+      expect(parseEvidence(mcp.structuredContent).normalized_result).toEqual({
+        ...shared,
+        target_sha256: targetSha256,
+        graph: { ...graph.graph, target_sha256: targetSha256 },
+      });
     },
     30_000,
   );

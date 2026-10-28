@@ -1,3 +1,4 @@
+import { projectCliAnalysisResult } from "./projectCliAnalysisResult.js";
 import { z } from "incur";
 import { createPureDataService } from "../composition/puredata.js";
 import { CLI_COMMANDS } from "../cliCommandNames.js";
@@ -26,15 +27,18 @@ export const registerPureDataCommands = (
           logger,
           CLI_COMMANDS.inspectPureData,
           async () =>
-            finishAnalysisCommand(
-              () =>
-                service.inspect(
-                  { path: absoluteCallerPath(args.path) },
-                  { signal },
-                ),
-              service,
-              "puredata-reader",
-              "inspect_puredata",
+            projectCliAnalysisResult(
+              await finishAnalysisCommand(
+                () =>
+                  service.inspect(
+                    { path: absoluteCallerPath(args.path) },
+                    { signal },
+                  ),
+                service,
+                "puredata-reader",
+                "inspect_puredata",
+                signal,
+              ),
             ),
         );
       }),

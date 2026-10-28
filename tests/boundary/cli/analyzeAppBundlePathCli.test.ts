@@ -1,4 +1,4 @@
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, symlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
 import { describe, expect } from "vitest";
@@ -41,8 +41,11 @@ describe("analyze app bundle path spellings", () => {
     "Sample.app//",
     "Sample.appex",
     "Sample.appex/",
+    ...(process.platform === "win32" ? [] : ["bundle-alias"]),
   ])("routes %s to native provider selection", async (path, { cli }) => {
     const cwd = await fixtureApp();
+    if (path === "bundle-alias")
+      await symlink(join(cwd, "Sample.app"), join(cwd, path));
     const result = await cli.run({
       arguments: ["analyze", path, "--json"],
       cwd,
@@ -59,3 +62,23 @@ describe("analyze app bundle path spellings", () => {
     });
   });
 });
+
+cliTest(
+  "routes an ordinary JavaScript directory named .app through the static application lane",
+  async ({ cli }) => {
+    const root = await createTestTempDirectory("rea-analyze-js-app-name-");
+    const app = join(root, "web.app");
+    await mkdir(app);
+    await writeFile(join(app, "package.json"), '{"main":"main.js"}');
+    await writeFile(join(app, "main.js"), "export const marker = 1;\n");
+    const result = await cli.run({
+      arguments: ["analyze", app, "--json"],
+      cwd: root,
+      environment,
+    });
+    expect(result.exitCode).toBe(0);
+    expect(result.json).toMatchObject({
+      operation: "analyze_javascript_application",
+    });
+  },
+);

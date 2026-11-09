@@ -1,3 +1,4 @@
+import { PURE_DATA_PROVIDER_IDENTITY } from "./PureDataProviderIdentity.js";
 import { readStableArtifact } from "../artifacts/readStableArtifact.js";
 import { ArtifactResourceScope } from "../artifacts/ArtifactResourceScope.js";
 import { ArtifactReaderFailure } from "../artifacts/ArtifactReader.js";
@@ -21,12 +22,6 @@ import {
 import { ProviderAdapterError } from "../domain/providerAdapterError.js";
 import { err, ok, type Result } from "../domain/result.js";
 
-/** Bundled Pure Data patch reader; committed text only, no patch evaluation. */
-export const PURE_DATA_PROVIDER_IDENTITY = {
-  id: "puredata-reader",
-  name: "REA Pure Data patch reader",
-  version: "1",
-} as const;
 const OPERATION = "inspect_puredata";
 const INPUT_BYTES = 64 * 1024 * 1024;
 

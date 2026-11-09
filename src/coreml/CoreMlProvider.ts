@@ -1,3 +1,4 @@
+import { CORE_ML_PROVIDER_IDENTITY } from "./CoreMlProviderIdentity.js";
 import { stat } from "node:fs/promises";
 import { isAbsolute, join } from "node:path";
 
@@ -24,12 +25,6 @@ import {
 import { ProviderAdapterError } from "../domain/providerAdapterError.js";
 import { err, ok, type Result } from "../domain/result.js";
 
-/** Bundled Core ML metadata reader; declared facts only, no model loading. */
-export const CORE_ML_PROVIDER_IDENTITY = {
-  id: "coreml-metadata",
-  name: "REA Core ML metadata reader",
-  version: "1",
-} as const;
 const OPERATION = "inspect_coreml_model";
 const METADATA_BYTES = 32 * 1024 * 1024;
 
